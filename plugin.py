@@ -3,7 +3,8 @@ from maibot_sdk.types import ToolParameterInfo, ToolParamType
 
 from .config import MaizonePluginConfig
 from .cookie import renew_cookies, set_api_capability, set_cookie_logger
-from .qzone_api import create_qzone_api, set_qzoneapi_logger
+from .image_reader import MaizoneImageReader
+from .qzone_api import create_qzone_api, set_image_manager, set_qzoneapi_logger
 from .image import set_images_plugin_context
 from .utils import set_utils_plugin_context, read_feed, send_feed
 from .tasks import FeedMonitor, ScheduleSender, set_tasks_logger
@@ -22,6 +23,8 @@ class MaizonePlugin(MaiBotPlugin):
         set_cookie_logger(self.ctx.logger)
         set_utils_plugin_context(self)
         set_images_plugin_context(self)
+        # 挂上识图钩子：上游的 image_manager 是空壳，配图只会变成 "[图片]"
+        set_image_manager(MaizoneImageReader(self))
 
         # ===== 检查文本模型是否可用 =====
         available_models = await self.ctx.llm.get_available_models()

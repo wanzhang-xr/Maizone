@@ -296,6 +296,23 @@ class ReadConfig(PluginConfigBase):
             "hint": "开启后模型输出“不回复”即跳过；关闭后只要命中评论概率就会评论。",
         },
     )
+    enable_image_read: bool = Field(
+        default=True,
+        description="是否让视觉模型读取说说配图，把图片转成文字描述后再交给模型。",
+        json_schema_extra={
+            "label": "读取配图内容",
+            "hint": "关闭后配图只占位成 [图片]，与未装本功能时的行为一致。",
+        },
+    )
+    image_read_task: str = Field(
+        default="vlm",
+        description="识图使用的模型任务名，对应 model_config.toml 里的 [model_task_config.<任务名>]。",
+        json_schema_extra={
+            "label": "识图模型任务名",
+            "hint": "默认 vlm，必须指向支持视觉输入的模型，否则识别会退回 [图片]。",
+            "placeholder": "vlm",
+        },
+    )
     prompt: str = Field(
         default="你是'{bot_personality}'，你正在浏览你好友'{target_name}'的QQ空间，你看到了你的好友'{target_name}'"
                 "在qq空间上在'{created_time}'发了一条内容是'{content}'的说说，现在是'{current_time}'"

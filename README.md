@@ -55,6 +55,8 @@ git clone https://github.com/internetsb/Maizone.git
 部分配置说明：
 
 - allow_skip_comment：是否允许跳过评论，若开启则进行评论时模型可选择不评论某条说说
+- enable_image_read：是否读取说说配图（默认开启）。开启后配图由视觉模型转成文字描述再交给模型；关闭则退化为 `[图片]` 占位
+- image_read_task：识图使用的模型任务名（默认 `vlm`），需在 `model_config.toml` 中指向支持视觉输入的模型
 
 ### 四、自动发送
 
@@ -232,7 +234,7 @@ self.ctx.logger.info(f"API 调用结果:{result}")
 
 ## 已知问题
 
-- 无法阅读图片
+- 配图识别效果取决于 `[model_task_config.vlm]` 指向的模型是否支持视觉输入；整屏截图类大图会先压缩到长边 1280 再送模型
 - 可能出现对同一条说说重复评论，或对同一条评论重复回复的问题，欢迎提供出现问题时的日志
 - 当前解析说说附带的视频时仅解析了视频封面
 - 自动回复评论依赖 QQ 空间 Web 私有接口，接口变更可能导致回复失败
