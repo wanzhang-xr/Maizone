@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 import os
@@ -134,6 +135,16 @@ class QzoneAPI:
         if 'p_skey' in self.cookies:
             self.gtk2 = generate_gtk(self.cookies['p_skey'])
 
+    # 配图下载：显式超时 + 网络错误重试
+    # 用默认的 httpx.Timeout(5.0) 时，DNS 抖动（例如容器里第一个 nameserver 不响应、
+    # 只能靠 ICMP port-unreachable 切到备用 DNS）会让部分请求刚好卡满 5s 被判超时；
+    # httpx 的超时异常 str() 是空串，日志里只留一行 "图片识别失败: <url> - "，配图被静默丢弃。
+    # 实测同一 URL 立刻重试即可成功，因此这里放大超时并对网络错误重试。
+    IMAGE_DOWNLOAD_TIMEOUT = 20.0
+    IMAGE_DOWNLOAD_CONNECT_TIMEOUT = 10.0
+    IMAGE_DOWNLOAD_ATTEMPTS = 2
+    IMAGE_DOWNLOAD_RETRY_DELAY = 0.3
+
     async def get_image_base64_by_url(self, url: str) -> str | None:
         """
             从指定的URL获取图片并将其转换为Base64编码格式，用于解析配图。
@@ -148,16 +159,37 @@ class QzoneAPI:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
             "Referer": "https://qzone.qq.com/"
         }
-        async with httpx.AsyncClient(follow_redirects=True) as client:
-            request = httpx.Request("GET", url, headers=headers)
-            response = await client.send(request)
+        timeout = httpx.Timeout(
+            self.IMAGE_DOWNLOAD_TIMEOUT,
+            connect=self.IMAGE_DOWNLOAD_CONNECT_TIMEOUT,
+        )
+        last_error = "未知错误"
+        for attempt in range(1, self.IMAGE_DOWNLOAD_ATTEMPTS + 1):
+            try:
+                async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as client:
+                    response = await client.get(url, headers=headers)
+            except Exception as exc:  # noqa: BLE001 - 单张图失败不能打断整轮读取
+                last_error = f"{type(exc).__name__}: {exc}" if str(exc) else f"{type(exc).__name__}（无错误信息，多为 DNS/连接超时）"
+                logger.warning(f"下载配图失败（第{attempt}/{self.IMAGE_DOWNLOAD_ATTEMPTS}次）: {url} - {last_error}")
+                if attempt < self.IMAGE_DOWNLOAD_ATTEMPTS:
+                    await asyncio.sleep(self.IMAGE_DOWNLOAD_RETRY_DELAY * attempt)
+                continue
 
-        if response.status_code != 200:
-            logger.error(f"请求失败: {response.url} 状态码: {response.status_code}")
-            logger.error(f"原始URL: {url}")
-            return None
+            if response.status_code != 200:
+                last_error = f"状态码 {response.status_code}"
+                logger.error(f"请求失败: {response.url} 状态码: {response.status_code}")
+                logger.error(f"原始URL: {url}")
+                # 4xx 是 URL 失效/鉴权问题，重试没有意义；5xx 才重试
+                if response.status_code < 500:
+                    return None
+                if attempt < self.IMAGE_DOWNLOAD_ATTEMPTS:
+                    await asyncio.sleep(self.IMAGE_DOWNLOAD_RETRY_DELAY * attempt)
+                continue
 
-        return base64.b64encode(response.content).decode('utf-8')
+            return base64.b64encode(response.content).decode('utf-8')
+
+        logger.error(f"下载配图最终失败: {url} - {last_error}")
+        return None
 
     async def upload_image(self, image: bytes) -> str | None:
         """
